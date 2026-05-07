@@ -3,7 +3,7 @@
 #include <LiquidCrystal_I2C.h>
 #include <KY040.h>
 // Реле
-#define REL_PIN 8                         // Указываем к какому выводу CLK энкодер подключен к Arduino
+#define REL_PIN 8                         // Указываем к какому выводу подключено реле 220
 // DHT11
 #define DHT_PIN 6                         // Указываем к какому выводу CLK энкодер подключен к Arduino
 // Кнопки
@@ -12,26 +12,26 @@
 #define SW_PIN 4                         // Указываем к какому выводу SW энкодер подключен к Arduino (BUTTON)
 KY040 g_rotaryEncoder(CLK_PIN, DT_PIN);
  
-
 // Create an instance of the DHT11 class.
-// - For Arduino: Connect the sensor to Digital I/O Pin 2.
 DHT11 dht11(DHT_PIN);
-
-LiquidCrystal_I2C lcd(0x27,16,2);  // set the LCD address to 0x27 for a 16 chars and 2 line display
+// LCD address to 0x27 for a 16 chars and 2 line display
+LiquidCrystal_I2C lcd(0x27,16,2);
 bool update_lcd_up = true;
 bool update_lcd_down = true;
-// 0 - wait, 1 - выбор температуры, 2 - выбор времени, 3 - в процессе, 4 - завершено
+
+// 0 - reset, 1 - set temp, 2 - set time, 3 - in progress, 4 - finish
 byte current_mode = 4;
 //
 int target_temperature = 42;
 int current_temperature = 0;
 //
-int time_left = 420;  // время в минутах
+int time_left = 420;  // timer in minutes
 unsigned long previousMillis = 0;     // will store last time LED was updated
 const long interval = 60000;           // interval 60 seconds
 
-char data[20];
 bool button_pressed = false;
+// 
+char data[20];
 
 byte Celsius[] = {
   B00111,
@@ -66,18 +66,15 @@ void setup() {
     lcd.init();
     lcd.backlight(); 
     //
-    pinMode(REL_PIN, OUTPUT);                // Указываем вывод CLK как вход
+    pinMode(REL_PIN, OUTPUT);
     //
-    pinMode(CLK_PIN, INPUT);                // Указываем вывод CLK как вход
-    pinMode(DT_PIN, INPUT);                 // Указываем вывод DT как вход
+    pinMode(CLK_PIN, INPUT);         // Указываем вывод CLK как вход
+    pinMode(DT_PIN, INPUT);          // Указываем вывод DT как вход
     pinMode(SW_PIN, INPUT);          // Указываем вывод SW как вход и включаем подтягивающий резистор
 
     // Бывает двойное считывание?
     // attachInterrupt(digitalPinToInterrupt(CLK_PIN), ISR_rotaryEncoder, CHANGE);
     // attachInterrupt(digitalPinToInterrupt(DT_PIN), ISR_rotaryEncoder, CHANGE);
-
-    // Uncomment the line below to set a custom delay between sensor readings (in milliseconds).
-    //dht11.setDelay(1000); // Set this to the desired delay. Default is 500ms.
     getCurrentTemperature();
 }
 
