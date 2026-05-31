@@ -20,16 +20,19 @@ bool update_lcd_up = true;
 bool update_lcd_down = true;
 
 // 0 - reset, 1 - set temp, 2 - set time, 3 - in progress, 4 - finish
-byte current_mode = 4;
+byte current_mode = 1;
 //
 int target_temperature = 42;
 int current_temperature = 0;
 //
-int time_left = 420;  // timer in minutes
+unsigned long time_left_seconds = 25200;  // timer in minutes
+unsigned long currentMillis;
 unsigned long previousMillis = 0;     // will store last time LED was updated
-const long interval = 60000;           // interval 60 seconds
+const long interval = 30;           // interval 30 seconds
 
 bool button_pressed = false;
+unsigned long lastDebounceTime = 0;
+unsigned long debounceDelay = 100;
 // 
 char data[20];
 
@@ -43,8 +46,6 @@ byte Celsius[] = {
   B00000,
   B00000,
 };
-int surprise = 10;  // пасхалка
-bool is_surprise = false;  // пасхалка
 byte Heart[] = {
   B00000,
   B01010,
@@ -61,10 +62,12 @@ void setup() {
     // Initialize serial communication to allow debugging and data readout.
     // Using a baud rate of 9600 bps.
     Serial.begin(9600);
+    lcd.init();
+    lcd.backlight();
+    
     lcd.createChar(0, Celsius);
     lcd.createChar(1, Heart);
-    lcd.init();
-    lcd.backlight(); 
+    Serial.println("CHAR INITIALIZED");
     //
     pinMode(REL_PIN, OUTPUT);
     //
@@ -72,6 +75,7 @@ void setup() {
     pinMode(DT_PIN, INPUT);          // Указываем вывод DT как вход
     pinMode(SW_PIN, INPUT);          // Указываем вывод SW как вход и включаем подтягивающий резистор
 
+    Serial.println("FINISH");
     // Бывает двойное считывание?
     // attachInterrupt(digitalPinToInterrupt(CLK_PIN), ISR_rotaryEncoder, CHANGE);
     // attachInterrupt(digitalPinToInterrupt(DT_PIN), ISR_rotaryEncoder, CHANGE);
@@ -79,6 +83,7 @@ void setup() {
 }
 
 void loop() {
+  currentMillis = millis();
   ISR_rotaryEncoder();
   if (digitalRead(SW_PIN) == LOW) {
     onButton();
@@ -86,23 +91,11 @@ void loop() {
   else {
     button_pressed = false;
   }
+  
   timer();
   heater();
-
   writeUpLCD();
   writeDownLCD();
-
-  if(is_surprise){
-    lcd.setCursor(0, 1);
-    lcd.print("I LOVE YOU!     ");
-    lcd.setCursor(11, 1);
-    lcd.write(byte(1));
-    lcd.setCursor(13, 1);
-    lcd.write(byte(1));
-    lcd.setCursor(15, 1);
-    lcd.write(byte(1));
-    is_surprise = false;
-  }
 }
 
 void ISR_rotaryEncoder(){
@@ -128,26 +121,27 @@ void writeUpLCD(){
       lcd.print("RESET           ");
       return;
     case 1:
-      sprintf(data, "Set TEMP:   %02d.C", target_temperature);
+      sprintf(data, "Set TEMP:   %02d*C", target_temperature);
       lcd.setCursor(0, 0);
       lcd.print(String(data));
       lcd.setCursor(14, 0);
       lcd.write(byte(0));
       return;
     case 2:
-      sprintf(data, "Set TIME: %02d:%02d ", time_left / 60, time_left % 60);
+      Serial.println((time_left_seconds % 3600) / 60);
+      sprintf(data, "Set TIME: %02lu:%02lu ", time_left_seconds / 3600, (time_left_seconds % 3600) / 60);
       lcd.setCursor(0, 0);
       lcd.print(String(data));
       return;
     case 3:
-      sprintf(data, "%02d.C / %02d:%02d   ", target_temperature, time_left / 60, time_left % 60);
+      sprintf(data, "%02d.C / %02lu:%02lu   ", target_temperature, time_left_seconds / 3600, (time_left_seconds % 3600) / 60);
       lcd.setCursor(0, 0);
       lcd.print(String(data));
       lcd.setCursor(2, 0);
       lcd.write(byte(0));
       return;
     case 4:
-      sprintf(data, "^__^ \ %02d:%02d  ", time_left / 60, time_left % 60);
+      sprintf(data, "^__^ \ %02lu:%02lu  ", time_left_seconds / 3600, (time_left_seconds % 3600) / 60);
       lcd.setCursor(0, 0);
       lcd.print(String(data));
       return;
@@ -158,7 +152,8 @@ void writeDownLCD(){
   if(!update_lcd_down){
     return;
   }
-  sprintf(data, "Temperature:%02d.C", current_temperature);
+  Serial.println("WRITE LCD DoWN");
+  sprintf(data, "Temperature:%02d*C", current_temperature);
   lcd.setCursor(0, 1);
   lcd.print(String(data));
   lcd.setCursor(14, 1);
@@ -170,12 +165,15 @@ void onButton(){
   if(button_pressed){
     return;
   }
-  button_pressed = true;
-  update_lcd_up = true;
-  Serial.println("Кнопка нажата");
-  current_mode += 1;
-  if(current_mode > 3){
-    current_mode = 0;
+  lastDebounceTime = millis();
+  if ((currentMillis - lastDebounceTime) > debounceDelay) {
+    button_pressed = true;
+    update_lcd_up = true;
+    Serial.println("Кнопка нажата");
+    current_mode += 1;
+    if(current_mode > 3){
+      current_mode = 0;
+    }
   }
 }
 
@@ -199,46 +197,39 @@ void onScroll(bool isScrolledPositive){
   if(current_mode == 2){
     update_lcd_up = true;
     if(isScrolledPositive) {
-      time_left -= 30;
-      if(time_left < 30){
-        time_left = 30;
-        surprise -= 1;
-        if(surprise <= 0){
-          is_surprise = true;
-          surprise = 10;
-        }
+      time_left_seconds -= 1800;
+      if(time_left_seconds < 1800){
+        time_left_seconds = 1800;
       }
     }
     else {
-      time_left += 30;
-      if(time_left > 900){
-        time_left = 900;
+      time_left_seconds += 1800;
+      // 16 часов
+      if(time_left_seconds > 57600){
+        time_left_seconds = 57600;
       }
     }
   }
 }
 
 void timer(){
-  unsigned long currentMillis = millis();
-
-  if (currentMillis - previousMillis >= interval) {
+  if (currentMillis - previousMillis >= interval * 1000) {
     // save the last time
     previousMillis = currentMillis;
     // Получаем температуру раз в минуту - что бы не блокировать поток инпута
-    Serial.println("GET TEMPERATURE");
     getCurrentTemperature();
     if(current_mode < 3){
       return;
     }
-    Serial.println(time_left);
+    Serial.println(time_left_seconds);
     if(current_mode == 3) {
-      time_left--;
-      if(time_left <= 0){
+      time_left_seconds -= interval;
+      if(time_left_seconds <= 0){
         current_mode = 4;
       }
     }
     else if (current_mode == 4) {
-      time_left++;
+      time_left_seconds += interval;
     }
     update_lcd_up = true;
   }
@@ -248,7 +239,7 @@ void heater() {
   // Если режим в процессе
   if(current_mode == 3){
   // Если температура ниже и работает таймер
-    if(time_left > 0 && current_temperature < target_temperature){
+    if(time_left_seconds > 0 && current_temperature < target_temperature){
       digitalWrite(REL_PIN, HIGH);
       return;
     }
@@ -262,7 +253,11 @@ void getCurrentTemperature(){
     int temperature = dht11.readTemperature();
     // If the reading is successful, print the temperature and humidity values.
     if (current_temperature != temperature) {
+        if(temperature > 99){
+          temperature = 99;
+        }
         current_temperature = temperature;
+        Serial.println(current_temperature);
         update_lcd_down = true;
     }
 }
